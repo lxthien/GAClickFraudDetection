@@ -19,7 +19,11 @@ jobs:
         id: guard
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-            echo "Chưa có secret CLOUDFLARE_API_TOKEN — bỏ qua deploy."
+            if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+              echo "::error::Không tìm thấy secret CLOUDFLARE_API_TOKEN. Thêm ở Settings → Secrets and variables → Actions → tab Secrets → Repository secrets (không phải Variables, không phải Environment secrets)."
+              exit 1
+            fi
+            echo "::warning::Chưa có secret CLOUDFLARE_API_TOKEN — bỏ qua deploy."
             echo "skip=1" >> "$GITHUB_OUTPUT"
           fi
 
