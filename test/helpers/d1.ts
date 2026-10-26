@@ -33,10 +33,11 @@ class Stmt {
   }
 }
 
-export function createD1(): D1Database {
+export function createD1(opts: { keepSeed?: boolean } = {}): D1Database {
   const db = new Database(':memory:');
   const dir = join(import.meta.dirname, '..', '..', 'migrations');
   for (const f of readdirSync(dir).filter((x) => x.endsWith('.sql')).sort()) db.exec(readFileSync(join(dir, f), 'utf8'));
+  if (!opts.keepSeed) db.exec('DELETE FROM sites'); // kiểm thử tự tạo site của mình
   const d1 = {
     prepare: (sql: string) => new Stmt(db, sql),
     batch: async (stmts: Stmt[]) => db.transaction(() => stmts.map((s) => s.exec()))(),

@@ -236,3 +236,23 @@ describe('API quản trị', () => {
     expect(db().prepare('SELECT ip_key FROM blocks').get()).toEqual({ ip_key: '14.161.20.30' });
   });
 });
+
+describe('trang quản lý và dữ liệu khởi tạo', () => {
+  it('phục vụ /ui với header bảo mật, không chứa dữ liệu', async () => {
+    const res = await app.request('/ui', {}, env);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
+    expect(res.headers.get('Content-Security-Policy')).toContain("frame-ancestors 'none'");
+    expect(await res.text()).toContain('Chặn click ảo');
+  });
+
+  it('migration khai báo sẵn 3 website, mỗi website một tài khoản, chỉ ghi log', async () => {
+    const seeded = createD1({ keepSeed: true });
+    const rows = raw(seeded).prepare('SELECT id, mode, share_group, domains FROM sites ORDER BY id').all();
+    expect(rows).toEqual([
+      { id: 'kientruckimanh', mode: 'log', share_group: 'kim-anh', domains: '["kientruckimanh.com"]' },
+      { id: 'xaydungkimanh', mode: 'log', share_group: 'kim-anh', domains: '["xaydungkimanh.com"]' },
+      { id: 'xaydungminhduy', mode: 'log', share_group: null, domains: '["xaydungminhduy.com"]' },
+    ]);
+  });
+});
