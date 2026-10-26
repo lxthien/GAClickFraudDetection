@@ -1,0 +1,26 @@
+name = "gcf-worker"
+main = "src/worker/index.ts"
+compatibility_date = "2026-09-01"
+
+# Tạo database: npx wrangler d1 create gcf  → dán database_id vào đây
+[[d1_databases]]
+binding = "DB"
+database_name = "gcf"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+# Một cron duy nhất mỗi 5 phút; các việc hằng ngày được phân nhánh bên trong (gói miễn phí chỉ có 5 cron/tài khoản)
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+GOOGLE_ADS_API_VERSION = "v26"
+RETENTION_DAYS = "90"
+
+# Secrets (đặt bằng: npx wrangler secret put <TÊN>)
+#   ADMIN_TOKEN                   bắt buộc, khóa cho /admin
+#   GOOGLE_OAUTH_CLIENT_ID        cần từ giai đoạn đối soát click_view / tự chặn
+#   GOOGLE_OAUTH_CLIENT_SECRET
+#   GOOGLE_OAUTH_REFRESH_TOKEN
+#   GOOGLE_ADS_LOGIN_CUSTOMER_ID  chỉ khi đi qua tài khoản MCC (không bắt buộc)
+#   TELEGRAM_BOT_TOKEN            không bắt buộc

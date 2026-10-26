@@ -1,0 +1,29 @@
+{
+  "name": "ga-click-fraud-detection",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Phát hiện và chặn click ảo cho Google Ads, chạy trên Cloudflare Workers, hỗ trợ nhiều website.",
+  "scripts": {
+    "build:tracker": "node scripts/build-tracker.mjs",
+    "typecheck": "npm run build:tracker && tsc --noEmit",
+    "test": "npm run build:tracker && vitest run",
+    "dev": "npm run build:tracker && wrangler dev",
+    "deploy": "npm run build:tracker && wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply gcf --local",
+    "db:migrate:remote": "wrangler d1 migrations apply gcf --remote"
+  },
+  "dependencies": {
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261019.1",
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.0.0",
+    "better-sqlite3": "^11.5.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "wrangler": "^4.0.0"
+  }
+}
