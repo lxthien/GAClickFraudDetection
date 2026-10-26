@@ -62,7 +62,7 @@ describe('trang quản lý', () => {
     f.name.value = 'Nam Việt Phát';
     f.domains.value = 'https://www.xaydungnamvietphat.com/';
     f.ads_customer_id.value = '111-222-3333';
-    doc.getElementById('editForm')!.dispatchEvent(new w.Event('submit', { cancelable: true }));
+    doc.getElementById('editForm')!.dispatchEvent(new (w as any).Event('submit', { cancelable: true }));
     await wait(150);
     const row = raw(env.DB).prepare(`SELECT name, domains, ads_customer_id, mode, site_key FROM sites WHERE id = 'namvietphat'`).get() as any;
     expect(row).toMatchObject({ name: 'Nam Việt Phát', domains: '["xaydungnamvietphat.com"]', ads_customer_id: '1112223333', mode: 'log' });

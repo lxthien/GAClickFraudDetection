@@ -74,7 +74,9 @@ npx wrangler secret put ADMIN_TOKEN        # chuỗi ngẫu nhiên dài
 npm run deploy
 ```
 
-Thêm một site (mỗi domain hoặc nhóm domain của một công ty):
+Trang quản lý: `https://gcf-worker.<tài-khoản>.workers.dev/ui` (đăng nhập bằng `ADMIN_TOKEN`): thêm/sửa website, xem số liệu, sao chép tag GTM và danh sách IP gợi ý. 3 website ban đầu được khai báo sẵn trong `migrations/0002_seed_sites.sql`.
+
+Hoặc thêm site bằng lệnh:
 
 ```bash
 curl -X PUT https://gcf-worker.<tài-khoản>.workers.dev/admin/sites/kim-anh \
@@ -122,7 +124,7 @@ Mọi endpoint cần `Authorization: Bearer <ADMIN_TOKEN>`.
 ## Phát triển
 
 ```bash
-npm test                    # build script + 43 kiểm thử (D1 giả lập bằng SQLite, chạy migration thật)
+npm test                    # build script + 49 kiểm thử (D1 giả lập bằng SQLite, chạy migration thật)
 npm run typecheck
 npm run db:migrate:local && npm run dev   # chạy cục bộ; .dev.vars: ADMIN_TOKEN=..., DEV=1
 ```
