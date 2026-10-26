@@ -3,6 +3,7 @@
  */
 import { Hono } from 'hono';
 import { canonicalCidr } from '../shared/ip';
+import { runScheduled } from './cron';
 import type { Env } from './env';
 import { clearSiteCache, toSite, type SiteRow } from './sites';
 
@@ -89,15 +90,20 @@ admin.get('/sites/:id/summary', async (c) => {
   const since = Date.now() - days * DAY;
   const sinceDate = new Date(since + 7 * 3600_000).toISOString().slice(0, 10);
   const db = c.env.DB;
-  const [verdicts, convs, blocks, reasons, billed] = await db.batch([
-    db.prepare(`SELECT COALESCE(verdict, 'pending') AS verdict, COUNT(*) AS n FROM visits WHERE site_id = ? AND started_at >= ? GROUP BY 1`).bind(id, since),
-    db.prepare(`SELECT type, client_ok, COUNT(*) AS n FROM conversions WHERE site_id = ? AND at >= ? GROUP BY 1, 2`).bind(id, since),
+  // Lượt thử (gclid TEST_) không tính vào thống kê.
+  const [verdicts, convs, blocks, reasons, billed, tests] = await db.batch([
+    db.prepare(`SELECT COALESCE(verdict, 'pending') AS verdict, COUNT(*) AS n FROM visits WHERE site_id = ? AND started_at >= ? AND is_test = 0 GROUP BY 1`).bind(id, since),
+    db.prepare(
+      `SELECT c.type, c.client_ok, COUNT(*) AS n FROM conversions c JOIN visits v ON v.pageview_id = c.pageview_id
+       WHERE c.site_id = ? AND c.at >= ? AND v.is_test = 0 GROUP BY 1, 2`,
+    ).bind(id, since),
     db.prepare(`SELECT status, COUNT(*) AS n FROM blocks WHERE site_id = ? GROUP BY 1`).bind(id),
-    db.prepare(`SELECT reasons FROM visits WHERE site_id = ? AND started_at >= ? AND verdict IN ('watch','block') LIMIT 2000`).bind(id, since),
+    db.prepare(`SELECT reasons FROM visits WHERE site_id = ? AND started_at >= ? AND is_test = 0 AND verdict IN ('watch','block') LIMIT 2000`).bind(id, since),
     db.prepare(
       `SELECT COUNT(*) AS billed, SUM(CASE WHEN v.pageview_id IS NULL THEN 1 ELSE 0 END) AS without_visit
        FROM ad_clicks a LEFT JOIN visits v ON v.gclid = a.gclid WHERE a.site_id = ? AND a.date >= ?`,
     ).bind(id, sinceDate),
+    db.prepare(`SELECT COUNT(*) AS n FROM visits WHERE site_id = ? AND started_at >= ? AND is_test = 1`).bind(id, since),
   ]);
   const reasonCount: Record<string, number> = {};
   for (const r of (reasons?.results ?? []) as Array<{ reasons: string | null }>) {
@@ -111,18 +117,21 @@ admin.get('/sites/:id/summary', async (c) => {
     blocks_by_status: blocks?.results ?? [],
     top_reasons: Object.entries(reasonCount).sort((a, b) => b[1] - a[1]),
     billed_clicks: (billed?.results ?? [])[0] ?? null,
+    test_visits: ((tests?.results ?? [])[0] as { n: number } | undefined)?.n ?? 0,
   });
 });
 
+/** ?test=1 → chỉ lượt thử (gclid TEST_); mặc định chỉ lượt thật. */
 admin.get('/sites/:id/visits', async (c) => {
   const verdict = c.req.query('verdict');
+  const isTest = c.req.query('test') === '1' ? 1 : 0;
   const limit = Math.min(500, Math.max(1, Number(c.req.query('limit') ?? 50)));
-  const sql = `SELECT pageview_id, visitor_id, gclid, ip, asn, as_org, country, city, path, started_at, dwell_ms, scroll_pct,
-                      interactions, score, verdict, reasons
-               FROM visits WHERE site_id = ?${verdict ? ' AND verdict = ?' : ''} ORDER BY started_at DESC LIMIT ?`;
+  const sql = `SELECT pageview_id, visitor_id, gclid, ip, asn, as_org, country, city, path, user_agent, started_at, ended_at, dwell_ms,
+                      scroll_pct, interactions, bot_webdriver, bot_headless, score, verdict, reasons
+               FROM visits WHERE site_id = ? AND is_test = ?${verdict ? ' AND verdict = ?' : ''} ORDER BY started_at DESC LIMIT ?`;
   const stmt = verdict
-    ? c.env.DB.prepare(sql).bind(c.req.param('id'), verdict, limit)
-    : c.env.DB.prepare(sql).bind(c.req.param('id'), limit);
+    ? c.env.DB.prepare(sql).bind(c.req.param('id'), isTest, verdict, limit)
+    : c.env.DB.prepare(sql).bind(c.req.param('id'), isTest, limit);
   const { results } = await stmt.all();
   return c.json(results);
 });
@@ -200,10 +209,13 @@ admin.get('/sites/:id/refund-report', async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT a.date, a.gclid, a.campaign_id, a.keyword, v.ip, v.as_org, v.country, v.score, v.reasons, v.started_at
      FROM ad_clicks a JOIN visits v ON v.gclid = a.gclid
-     WHERE a.site_id = ? AND a.date BETWEEN ? AND ? AND v.verdict = 'block' ORDER BY a.date`,
+     WHERE a.site_id = ? AND a.date BETWEEN ? AND ? AND v.verdict = 'block' AND v.is_test = 0 ORDER BY a.date`,
   ).bind(c.req.param('id'), from, to).all<Record<string, unknown>>();
   const cols = ['date', 'gclid', 'campaign_id', 'keyword', 'ip', 'as_org', 'country', 'score', 'reasons', 'started_at'];
   const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const csv = [cols.join(','), ...results.map((r) => cols.map((k) => esc(r[k])).join(','))].join('\n');
   return c.body(csv, 200, { 'Content-Type': 'text/csv; charset=utf-8' });
 });
+
+/** Chạy ngay một vòng chấm điểm (thay vì chờ cron 5 phút). Dùng khi kiểm thử. */
+admin.post('/cron/run', async (c) => c.json(await runScheduled(c.env, Date.now())));

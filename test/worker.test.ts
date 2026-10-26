@@ -256,3 +256,62 @@ describe('trang quản lý và dữ liệu khởi tạo', () => {
     ]);
   });
 });
+
+describe('lượt thử nghiệm (gclid TEST_)', () => {
+  const auth = { Authorization: 'Bearer secret-token' };
+
+  it('được đánh dấu khi ghi nhận', async () => {
+    seedSite(env.DB);
+    await beacon({ ...load, g: 'TEST_gcf_check_0001' });
+    expect(db().prepare('SELECT is_test FROM visits').get()).toEqual({ is_test: 1 });
+  });
+
+  it('được chấm điểm nhưng không bao giờ tạo lệnh chặn hay whitelist', async () => {
+    seedSite(env.DB, { mode: 'suggest' });
+    insertVisit({ pageview_id: 'pv-test-0001', gclid: 'TEST_sim_headless', is_test: 1, bot_headless: 1 });
+    db().prepare(`INSERT INTO conversions (site_id, pageview_id, visitor_id, type, client_ok, ip_key, at) VALUES ('kim-anh','pv-test-0001','visitor00001','call',1,'14.161.20.30',?)`).run(Date.now());
+    insertVisit({ pageview_id: 'pv-test-0002', visitor_id: 'visitor00002', gclid: 'TEST_sim_bot', is_test: 1, bot_webdriver: 1 });
+    await runScheduled(env);
+    expect(db().prepare('SELECT verdict FROM visits ORDER BY pageview_id').all()).toEqual([{ verdict: 'exempt' }, { verdict: 'block' }]);
+    expect(db().prepare('SELECT COUNT(*) AS n FROM blocks').get()).toEqual({ n: 0 });
+    expect(db().prepare('SELECT COUNT(*) AS n FROM whitelist').get()).toEqual({ n: 0 });
+  });
+
+  it('chuyển đổi của lượt thử không miễn chặn cho lượt thật của cùng thiết bị', async () => {
+    seedSite(env.DB, { mode: 'suggest' });
+    insertVisit({ pageview_id: 'pv-test-0001', gclid: 'TEST_preview', is_test: 1 });
+    db().prepare(`INSERT INTO conversions (site_id, pageview_id, visitor_id, type, client_ok, ip_key, at) VALUES ('kim-anh','pv-test-0001','visitor00001','call',1,'14.161.20.30',?)`).run(Date.now());
+    insertVisit({ pageview_id: 'pv-real-0001', bot_webdriver: 1 });
+    await runScheduled(env);
+    expect(db().prepare(`SELECT verdict FROM visits WHERE pageview_id = 'pv-real-0001'`).get()).toEqual({ verdict: 'block' });
+    expect(db().prepare('SELECT COUNT(*) AS n FROM blocks').get()).toEqual({ n: 1 });
+  });
+
+  it('lượt thử không cộng vào số click lặp lại của lượt thật', async () => {
+    seedSite(env.DB, { mode: 'log' });
+    const t = Date.now();
+    insertVisit({ pageview_id: 'pv-test-0001', gclid: 'TEST_a', is_test: 1, started_at: t - 50 * MIN, ended_at: t - 49 * MIN });
+    insertVisit({ pageview_id: 'pv-test-0002', gclid: 'TEST_b', is_test: 1, started_at: t - 48 * MIN, ended_at: t - 47 * MIN });
+    insertVisit({ pageview_id: 'pv-real-0001', started_at: t - 46 * MIN, ended_at: t - 45 * MIN });
+    await runScheduled(env, t);
+    expect(db().prepare(`SELECT verdict, reasons FROM visits WHERE pageview_id = 'pv-real-0001'`).get()).toEqual({ verdict: 'normal', reasons: '[]' });
+  });
+
+  it('không tính vào thống kê; xem riêng bằng ?test=1', async () => {
+    seedSite(env.DB);
+    insertVisit({ pageview_id: 'pv-test-0001', gclid: 'TEST_a', is_test: 1 });
+    insertVisit({ pageview_id: 'pv-real-0001', visitor_id: 'visitor00009' });
+    const sm = (await (await app.request('/admin/sites/kim-anh/summary', { headers: auth }, env)).json()) as any;
+    expect(sm.visits_by_verdict).toEqual([{ verdict: 'pending', n: 1 }]);
+    expect(sm.test_visits).toBe(1);
+    const tests = (await (await app.request('/admin/sites/kim-anh/visits?test=1', { headers: auth }, env)).json()) as any[];
+    expect(tests.map((v) => v.gclid)).toEqual(['TEST_a']);
+  });
+
+  it('POST /admin/cron/run chạy ngay một vòng chấm điểm', async () => {
+    seedSite(env.DB);
+    insertVisit({ pageview_id: 'pv-real-0001' });
+    const res = await app.request('/admin/cron/run', { method: 'POST', headers: auth }, env);
+    expect(((await res.json()) as any).sites[0]).toMatchObject({ id: 'kim-anh', scored: 1 });
+  });
+});

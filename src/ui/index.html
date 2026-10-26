@@ -265,11 +265,12 @@ a{color:var(--accent)}
     const s = sites.find((x) => x.id === id);
     if (!s) { app.innerHTML = '<p class="err">Không tìm thấy website.</p>'; return; }
     const enc = encodeURIComponent(id);
-    const [sm, flagged, blocks, suggested] = await Promise.all([
+    const [sm, flagged, blocks, suggested, tests] = await Promise.all([
       api(`/sites/${enc}/summary?days=7`),
       api(`/sites/${enc}/visits?verdict=block&limit=100`),
       api(`/sites/${enc}/blocks`),
       api(`/sites/${enc}/blocks/export?status=suggested`),
+      api(`/sites/${enc}/visits?test=1&limit=50`),
     ]);
     const tag = `<script async src="${location.origin}/t.js?s=${s.site_key}"><\/script>`;
     const billed = sm.billed_clicks || {};
@@ -288,6 +289,7 @@ a{color:var(--accent)}
         <div class="stat"><b>${verdictCount(sm, 'pending')}</b><span>chờ chấm</span></div>
         <div class="stat"><b>${billed.billed ?? 0}</b><span>click Google tính tiền</span></div>
         <div class="stat"><b>${billed.without_visit ?? 0}</b><span>tính tiền nhưng không vào trang</span></div>
+        <div class="stat"><b>${sm.test_visits ?? 0}</b><span>lượt thử (không tính)</span></div>
       </div>
       ${reasons.length ? `<div style="margin-top:10px">${reasons.map(([c, n]) => `<span class="reason">${esc(REASON[c] || c)}: ${n}</span>`).join('')}</div>` : ''}
       </div>
@@ -325,6 +327,19 @@ a{color:var(--accent)}
           <td class="mono">${esc(v.path)}</td><td>${v.dwell_ms != null ? esc(Math.round(v.dwell_ms / 1000) + ' giây') : '—'}</td>
           <td>${JSON.parse(v.reasons || '[]').map((r) => `<span class="reason">${esc(REASON[r.code] || r.code)}</span>`).join('')}</td>
         </tr>`).join('')}</table>` : '<p class="empty">Chưa có lượt nào bị gắn cờ.</p>'}</div>
+
+      <h2>Lượt thử nghiệm</h2>
+      <div class="card tablewrap">
+        <div class="hint" style="margin:0 0 8px">Lượt có gclid bắt đầu bằng TEST_ (GTM Preview, giả lập). Được chấm điểm để kiểm tra bộ phát hiện, nhưng không bao giờ bị chặn và không tính vào thống kê.</div>
+        ${tests.length ? `<table>
+        <tr><th>Thời gian</th><th>gclid</th><th>Kết luận</th><th>Điểm</th><th>Ở lại</th><th>Lý do</th></tr>
+        ${tests.map((v) => `<tr>
+          <td>${esc(fmtTime(v.started_at))}</td><td class="mono">${esc(v.gclid)}</td>
+          <td class="verdict-${esc(v.verdict || 'pending')}">${esc(VERDICT[v.verdict || 'pending'])}</td><td>${esc(v.score ?? '')}</td>
+          <td>${v.dwell_ms != null ? esc(Math.round(v.dwell_ms / 1000) + ' giây') : '—'}</td>
+          <td>${JSON.parse(v.reasons || '[]').map((r) => `<span class="reason">${esc(REASON[r.code] || r.code)}</span>`).join('')}</td>
+        </tr>`).join('')}</table>` : '<p class="empty">Chưa có lượt thử nào.</p>'}
+      </div>
 
       <div class="actions" style="margin-top:24px"><button data-edit="${esc(s.id)}">Sửa cấu hình</button>
       <a class="btn" href="/admin/sites/${enc}/refund-report" id="refund">Tải hồ sơ hoàn tiền (CSV)</a></div>`;

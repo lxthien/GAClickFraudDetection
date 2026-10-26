@@ -1,0 +1,36 @@
+name: Simulate
+
+# Giả lập traffic (gclid TEST_…) vào website thật rồi kiểm tra kết quả chấm điểm.
+# Lượt thử không bao giờ bị chặn và không tính vào thống kê.
+on:
+  workflow_dispatch:
+    inputs:
+      site_url:
+        description: Landing page (đã gắn tag GTM)
+        default: https://www.xaydungkimanh.com/
+        required: true
+      site_id:
+        description: Mã site trong trang quản lý
+        default: xaydungkimanh
+        required: true
+
+jobs:
+  simulate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Cài Playwright + Chromium
+        run: |
+          npm i --no-save playwright@1
+          npx playwright install --with-deps chromium
+      - name: Chạy giả lập
+        env:
+          SITE_URL: ${{ inputs.site_url }}
+          SITE_ID: ${{ inputs.site_id }}
+          WORKER_URL: ${{ vars.WORKER_URL || 'https://gcf-worker.lxthien.workers.dev' }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+        run: node scripts/simulate.mjs

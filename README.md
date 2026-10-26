@@ -120,16 +120,23 @@ Mọi endpoint cần `Authorization: Bearer <ADMIN_TOKEN>`.
 | POST | `/admin/whitelist` | Thêm IP/CIDR hoặc thiết bị vào whitelist |
 | POST | `/admin/leads` | Trạng thái lead từ Google Sheet |
 | GET | `/admin/sites/:id/refund-report?from=&to=` | CSV hồ sơ xin hoàn tiền |
+| POST | `/admin/cron/run` | Chấm điểm ngay, không chờ cron 5 phút |
 
 ## Phát triển
 
 ```bash
-npm test                    # build script + 49 kiểm thử (D1 giả lập bằng SQLite, chạy migration thật)
+npm test                    # build script + 55 kiểm thử (D1 giả lập bằng SQLite, chạy migration thật)
 npm run typecheck
 npm run db:migrate:local && npm run dev   # chạy cục bộ; .dev.vars: ADMIN_TOKEN=..., DEV=1
 ```
 
 `DEV=1` cho phép giả lập IP bằng header `X-Forwarded-For`. Không đặt biến này khi deploy.
+
+### Lượt thử và giả lập traffic
+
+Lượt có gclid/gbraid/wbraid bắt đầu bằng `TEST_` (GTM Preview, kiểm thử tay, giả lập) được chấm điểm để kiểm tra bộ phát hiện, nhưng **không bao giờ** bị chặn, đưa vào whitelist, tính vào thống kê hay hồ sơ hoàn tiền. Xem riêng ở mục "Lượt thử nghiệm" trong /ui.
+
+**Actions → Simulate → Run workflow** chạy 3 kịch bản bằng trình duyệt thật vào website (đã gắn tag): người đọc trang, bot headless, một thiết bị click 3 lần. Sau đó gọi `POST /admin/cron/run` để chấm điểm ngay và đối chiếu mã lý do với kết quả mong đợi. Request tới Google Analytics / Google Ads / Facebook / Clarity bị chặn trong trình duyệt giả lập để không làm bẩn số liệu.
 
 ## Giới hạn đã biết
 

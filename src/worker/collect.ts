@@ -32,6 +32,11 @@ function defer(c: Context<{ Bindings: Env }>, p: Promise<unknown>): Promise<unkn
   }
 }
 
+/** Lượt thử nghiệm: mã click quảng cáo bắt đầu bằng TEST_ (GTM Preview, giả lập). */
+export function isTestTraffic(b: { g: string | null; gb: string | null; wb: string | null }): boolean {
+  return [b.g, b.gb, b.wb].some((x) => !!x && x.startsWith('TEST_'));
+}
+
 export async function handleCollect(c: Context<{ Bindings: Env }>): Promise<Response> {
   const len = Number(c.req.header('Content-Length') ?? '0');
   if (len > MAX_BODY_BYTES) return c.body(null, 413);
@@ -61,8 +66,8 @@ export async function handleCollect(c: Context<{ Bindings: Env }>): Promise<Resp
       .prepare(
         `INSERT OR IGNORE INTO visits
           (pageview_id, site_id, visitor_id, fp_hash, gclid, gbraid, wbraid, ip, ip_key, ip_version,
-           asn, as_org, country, city, user_agent, path, referrer_host, bot_webdriver, bot_headless, started_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           asn, as_org, country, city, user_agent, path, referrer_host, bot_webdriver, bot_headless, started_at, is_test)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .bind(
         beacon.p, site.id, beacon.v, beacon.fp, beacon.g, beacon.gb, beacon.wb,
@@ -73,6 +78,7 @@ export async function handleCollect(c: Context<{ Bindings: Env }>): Promise<Resp
         typeof cf?.city === 'string' ? cf.city : null,
         (c.req.header('User-Agent') ?? '').slice(0, 300),
         beacon.u, beacon.r, beacon.wd ? 1 : 0, beacon.hl ? 1 : 0, now,
+        isTestTraffic(beacon) ? 1 : 0,
       )
       .run();
   } else if (beacon.e === 'end') {

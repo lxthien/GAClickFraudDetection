@@ -40,6 +40,7 @@ export interface VisitRow {
   dwell_ms: number | null;
   scroll_pct: number | null;
   interactions: number | null;
+  is_test: number;
 }
 
 export interface SiteReport {
@@ -139,8 +140,10 @@ export async function scorePending(db: D1Database, site: Site, sites: Site[], mo
       `SELECT * FROM visits WHERE site_id = ? AND started_at > ?
          AND (visitor_id IN (${ph(vids.length)})${fps.length ? ` OR fp_hash IN (${ph(fps.length)})` : ''})`,
     ).bind(site.id, since, ...vids, ...fps),
-    db.prepare(`SELECT visitor_id FROM conversions WHERE site_id = ? AND client_ok = 1 AND visitor_id IN (${ph(vids.length)})`)
-      .bind(site.id, ...vids),
+    db.prepare(
+      `SELECT c.visitor_id, v.is_test FROM conversions c JOIN visits v ON v.pageview_id = c.pageview_id
+       WHERE c.site_id = ? AND c.client_ok = 1 AND c.visitor_id IN (${ph(vids.length)})`,
+    ).bind(site.id, ...vids),
     db.prepare(
       `SELECT visitor_id, gclid, status FROM leads WHERE site_id = ?
          AND (visitor_id IN (${ph(vids.length)})${gclids.length ? ` OR gclid IN (${ph(gclids.length)})` : ''})
@@ -151,7 +154,8 @@ export async function scorePending(db: D1Database, site: Site, sites: Site[], mo
   ]);
 
   const relatedRows = (related?.results ?? []) as VisitRow[];
-  const converted = new Set(((convs?.results ?? []) as Array<{ visitor_id: string }>).map((c) => c.visitor_id));
+  // Chuyển đổi của lượt thử chỉ miễn chặn cho lượt thử, không bao giờ cho thiết bị thật.
+  const converted = new Set(((convs?.results ?? []) as Array<{ visitor_id: string; is_test: number }>).map((c) => `${c.visitor_id}:${c.is_test}`));
   const leadByVisitor = new Map<string, LeadStatus>();
   const leadByGclid = new Map<string, LeadStatus>();
   for (const l of (leads?.results ?? []) as Array<{ visitor_id: string | null; gclid: string | null; status: LeadStatus }>) {
@@ -173,7 +177,8 @@ export async function scorePending(db: D1Database, site: Site, sites: Site[], mo
   for (const v of pending) {
     // Cùng thiết bị = cùng visitor_id, hoặc cùng dấu vân tay VÀ cùng IP (dấu vân tay nhẹ trùng nhau nhiều giữa các iPhone).
     const sameDevice = relatedRows.filter(
-      (r) => r.visitor_id === v.visitor_id || (!!v.fp_hash && r.fp_hash === v.fp_hash && r.ip_key === v.ip_key),
+      (r) => r.is_test === v.is_test &&
+        (r.visitor_id === v.visitor_id || (!!v.fp_hash && r.fp_hash === v.fp_hash && r.ip_key === v.ip_key)),
     );
     const recent = sameDevice.filter((r) => r.started_at <= v.started_at && r.started_at > v.started_at - DAY);
     const network = classifyNetwork(v.asn, v.as_org, v.country);
@@ -197,7 +202,7 @@ export async function scorePending(db: D1Database, site: Site, sites: Site[], mo
           adClicks24h: Math.max(1, recent.length),
           distinctIps24h: new Set(recent.map((r) => r.ip_key)).size || 1,
         },
-        outcome: { validConversion: converted.has(v.visitor_id), leadStatus: lead },
+        outcome: { validConversion: converted.has(`${v.visitor_id}:${v.is_test}`), leadStatus: v.is_test ? null : lead },
         now,
       },
       { watch: site.watch_threshold, block: site.block_threshold },
@@ -207,6 +212,9 @@ export async function scorePending(db: D1Database, site: Site, sites: Site[], mo
       db.prepare('UPDATE visits SET scored_at = ?, score = ?, verdict = ?, reasons = ? WHERE pageview_id = ?')
         .bind(now, result.score, result.verdict, JSON.stringify(result.reasons), v.pageview_id),
     );
+
+    // Lượt thử: chỉ chấm điểm để kiểm tra bộ phát hiện, không bao giờ chặn hay whitelist.
+    if (v.is_test) continue;
 
     if (result.verdict === 'exempt') {
       exemptVisitors.set(v.visitor_id, v.ip_key);
